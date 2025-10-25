@@ -6,8 +6,30 @@ from dotenv import load_dotenv
 import os
 import re
 
+# This function creates the client and caches it as a "resource".
+# It will only run ONCE, and all users will share this one client.
+@st.cache_resource
+def get_tweepy_client():
+    load_dotenv()
+    BEARER_TOKEN = os.getenv("BEARER_TOKEN")
+    
+    if not BEARER_TOKEN:
+        st.error("BEARER_TOKEN not found. Please check your Streamlit Secrets.")
+        st.stop()
+    
+    try:
+        # We pass wait_on_rate_limit=True
+        client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=True)
+        return client
+    except Exception as e:
+        st.error(f"Error authenticating with Twitter: {e}")
+        st.stop()
+
+# --- Text processing functions ---
+
 def clean_tweet(tweet):
-    return ' '.join(re.sub("(@[A-Za-z0-9]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", tweet).split())
+    # Using a raw string (r"...") fixes the SyntaxWarning
+    return ' '.join(re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", tweet).split())
 
 def get_tweet_sentiment(tweet):
     analysis = TextBlob(clean_tweet(tweet))
@@ -22,23 +44,23 @@ def get_sentiment_polarity(tweet):
     analysis = TextBlob(clean_tweet(tweet))
     return analysis.sentiment.polarity
 
+# --- Data fetching function ---
+
+# This function is cached for 10 minutes (600 seconds)
+# It now works because the '_client' it receives is the *same* cached object every time
 @st.cache_data(ttl=600)
-def fetch_tweets(client, query, count=50):
+def fetch_tweets(_client, query, count=50):
     tweets = []
     try:
-        # The new v2 function is search_recent_tweets
-        # We ask for user details with 'expansions' and 'user_fields'
-        response = client.search_recent_tweets(
+        response = _client.search_recent_tweets(
             query=query, 
             max_results=count, 
             expansions=['author_id'],
             user_fields=['username'],
-            tweet_fields=['created_at'] # You can add more fields if needed
+            tweet_fields=['created_at']
         )
         
-        # The v2 response is different. Tweets are in 'data', user info is in 'includes'
         if response.data:
-            # Create a dictionary of users for easy lookup
             users = {user.id: user for user in response.includes['users']}
             
             for tweet in response.data:
@@ -59,46 +81,32 @@ def fetch_tweets(client, query, count=50):
         st.error(f"Error fetching tweets: {e}")
         return None
 
+# --- Main app logic ---
+
 def main():
-    load_dotenv()
-
-    # We only need the Bearer Token for v2
-    BEARER_TOKEN = os.getenv("BEARER_TOKEN")
-
-    if not BEARER_TOKEN:
-        st.error("BEARER_TOKEN not found in .env file.")
-        st.stop()
-
-    try:
-        # This is the new v2 Client
-        client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=True)
-    except Exception as e:
-        st.error(f"Error authenticating with Twitter: {e}")
-        st.stop()
-
     st.set_page_config(page_title="Twitter Sentiment Tracker", layout="wide")
-    st.title(" Twitter Sentiment Tracker")
+    st.title("🐦 Twitter Sentiment Tracker (v2 API)")
     st.markdown("A real-time dashboard to analyze public sentiment on any topic.")
+
+    # Get the ONE, cached client
+    client = get_tweepy_client()
 
     st.sidebar.header("Search Parameters")
     query = st.sidebar.text_input("Enter a topic or hashtag (e.g., #Python)", "#Python")
-    
-    # Free v2 API has a max of 100 per request, min 10
     count = st.sidebar.slider("Number of Tweets to Analyze (10-100)", 10, 100, 50)
     
     if st.sidebar.button("Analyze Sentiment"):
         if query:
-            # Add a filter to get English tweets and exclude retweets for cleaner data
             full_query = f"{query} lang:en -is:retweet"
             
             with st.spinner(f"Fetching and analyzing {count} tweets for '{query}'..."):
+                # Pass the cached client to the cached data function
                 tweets = fetch_tweets(client, full_query, count)
                 
                 if tweets:
                     df = pd.DataFrame(tweets)
                     
                     st.subheader(f"Overall Sentiment Analysis")
-                    
                     sentiment_counts = df['sentiment'].value_counts()
                     sentiment_df = pd.DataFrame({'Sentiment': sentiment_counts.index, 'Tweets': sentiment_counts.values})
                     
