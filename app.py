@@ -7,7 +7,7 @@ import os
 import re
 
 # This function creates the client and caches it as a "resource".
-# It will only run ONCE, and all users will share this one client.
+# We set wait_on_rate_limit=False so it will error instead of sleep.
 @st.cache_resource
 def get_tweepy_client():
     load_dotenv()
@@ -18,8 +18,8 @@ def get_tweepy_client():
         st.stop()
     
     try:
-        # We pass wait_on_rate_limit=True
-        client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=True)
+        # wait_on_rate_limit=False is the key change.
+        client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=False)
         return client
     except Exception as e:
         st.error(f"Error authenticating with Twitter: {e}")
@@ -46,13 +46,12 @@ def get_sentiment_polarity(tweet):
 
 # --- Data fetching function ---
 
-# This function is cached for 10 minutes (600 seconds)
-# It now works because the '_client' it receives is the *same* cached object every time
-@st.cache_data(ttl=600)
-def fetch_tweets(_client, query, count=50):
+# We remove caching because the rate limit is so low,
+# we *want* to show an error, not old data.
+def fetch_tweets(client, query, count=50):
     tweets = []
     try:
-        response = _client.search_recent_tweets(
+        response = client.search_recent_tweets(
             query=query, 
             max_results=count, 
             expansions=['author_id'],
@@ -77,6 +76,10 @@ def fetch_tweets(_client, query, count=50):
         
         return tweets
 
+    # This is the new, important part!
+    except tweepy.errors.TooManyRequests as e:
+        st.error("Rate Limit Exceeded. The X API Free Tier only allows 1 search every 15 minutes. Please try again later.")
+        return None
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
         return None
@@ -88,7 +91,6 @@ def main():
     st.title("🐦 Twitter Sentiment Tracker (v2 API)")
     st.markdown("A real-time dashboard to analyze public sentiment on any topic.")
 
-    # Get the ONE, cached client
     client = get_tweepy_client()
 
     st.sidebar.header("Search Parameters")
@@ -100,9 +102,9 @@ def main():
             full_query = f"{query} lang:en -is:retweet"
             
             with st.spinner(f"Fetching and analyzing {count} tweets for '{query}'..."):
-                # Pass the cached client to the cached data function
                 tweets = fetch_tweets(client, full_query, count)
                 
+                # This logic is now safe because fetch_tweets will return None on error
                 if tweets:
                     df = pd.DataFrame(tweets)
                     
@@ -124,23 +126,10 @@ def main():
 
                     st.subheader("Raw Tweet Data")
                     st.dataframe(df[['user', 'text', 'sentiment', 'polarity', 'url']], use_container_width=True)
-
-                    st.subheader("Random Positive Tweets")
-                    positive_tweets_series = df[df['sentiment'] == 'Positive']['text']
-                    if not positive_tweets_series.empty:
-                        for t in positive_tweets_series.sample(min(5, len(positive_tweets_series))).tolist():
-                            st.markdown(f"> {t}")
-                    else:
-                        st.info("No positive tweets found in this batch.")
-
-                    st.subheader("Random Negative Tweets")
-                    negative_tweets_series = df[df['sentiment'] == 'Negative']['text']
-                    if not negative_tweets_series.empty:
-                        for t in negative_tweets_series.sample(min(5, len(negative_tweets_series))).tolist():
-                            st.markdown(f"> {t}")
-                    else:
-                        st.info("No negative tweets found in this batch.")
                 
+                elif tweets is None:
+                    # This means the rate limit error was handled
+                    pass
                 else:
                     st.warning("No tweets found for that query. Try another term.")
         else:
