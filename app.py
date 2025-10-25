@@ -22,6 +22,7 @@ def get_sentiment_polarity(tweet):
     analysis = TextBlob(clean_tweet(tweet))
     return analysis.sentiment.polarity
 
+@st.cache_data(ttl=600)
 def fetch_tweets(client, query, count=50):
     tweets = []
     try:
