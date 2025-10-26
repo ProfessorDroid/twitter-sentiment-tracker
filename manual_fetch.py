@@ -4,9 +4,8 @@ from dotenv import load_dotenv
 import os
 import re
 from textblob import TextBlob
-import json # To print nicely
+import json
 
-# --- Helper Functions ---
 def clean_tweet(tweet):
     return ' '.join(re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", tweet).split())
 
@@ -20,10 +19,8 @@ def get_sentiment_polarity(tweet):
     analysis = TextBlob(clean_tweet(tweet))
     return analysis.sentiment.polarity
 
-# --- Fetch Logic ---
 def fetch_one_batch():
     load_dotenv()
-    # Use the NEW Bearer Token you regenerated
     BEARER_TOKEN = os.getenv("BEARER_TOKEN")
     
     if not BEARER_TOKEN:
@@ -31,14 +28,13 @@ def fetch_one_batch():
         return None
 
     try:
-        # IMPORTANT: wait_on_rate_limit=False so it fails fast
         client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=False) 
         print("Authenticated successfully...")
     except Exception as e:
         print(f"Error authenticating: {e}")
         return None
 
-    topic = "#Python" # Just get one topic
+    topic = "#Python"
     full_query = f"{topic} lang:en -is:retweet"
     all_tweets_data = []
 
@@ -70,7 +66,7 @@ def fetch_one_batch():
                 parsed_tweet['url'] = f"https://twitter.com/{user.username if user else 'i'}/status/{tweet.id}"
                 
                 all_tweets_data.append(parsed_tweet)
-            return all_tweets_data # Return the list of tweet dicts
+            return all_tweets_data
             
         else:
             print("No tweets found.")
@@ -88,7 +84,6 @@ if __name__ == "__main__":
     tweet_list = fetch_one_batch()
     
     if tweet_list:
-        # If successful, save directly to CSV
         df = pd.DataFrame(tweet_list)
         df.to_csv("tweets.csv", index=False)
         print(f"\nSuccessfully saved {len(df)} tweets to tweets.csv")
