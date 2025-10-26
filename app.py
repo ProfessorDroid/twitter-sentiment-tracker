@@ -1,34 +1,15 @@
 import streamlit as st
-import tweepy
 import pandas as pd
 from textblob import TextBlob
-from dotenv import load_dotenv
-import os
 import re
+import os # Keep os just in case, but no dotenv needed
 
-# This function creates the client and caches it as a "resource".
-# We set wait_on_rate_limit=False so it will error instead of sleep.
-@st.cache_resource
-def get_tweepy_client():
-    load_dotenv()
-    BEARER_TOKEN = os.getenv("BEARER_TOKEN")
-    
-    if not BEARER_TOKEN:
-        st.error("BEARER_TOKEN not found. Please check your Streamlit Secrets.")
-        st.stop()
-    
-    try:
-        # wait_on_rate_limit=False is the key change.
-        client = tweepy.Client(BEARER_TOKEN, wait_on_rate_limit=False)
-        return client
-    except Exception as e:
-        st.error(f"Error authenticating with Twitter: {e}")
-        st.stop()
-
-# --- Text processing functions ---
+# --- Text processing functions (still needed) ---
 
 def clean_tweet(tweet):
-    # Using a raw string (r"...") fixes the SyntaxWarning
+    # Make sure tweet is a string
+    tweet = str(tweet)
+    # Using a raw string (r"...")
     return ' '.join(re.sub(r"(@[A-Za-z0-9]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", tweet).split())
 
 def get_tweet_sentiment(tweet):
@@ -44,96 +25,104 @@ def get_sentiment_polarity(tweet):
     analysis = TextBlob(clean_tweet(tweet))
     return analysis.sentiment.polarity
 
-# --- Data fetching function ---
+# --- Data Loading Function ---
 
-# We remove caching because the rate limit is so low,
-# we *want* to show an error, not old data.
-def fetch_tweets(client, query, count=50):
-    tweets = []
+# We use @st.cache_data to load the CSV only once for speed
+@st.cache_data
+def load_data(file_path="tweets.csv"):
     try:
-        response = client.search_recent_tweets(
-            query=query, 
-            max_results=count, 
-            expansions=['author_id'],
-            user_fields=['username'],
-            tweet_fields=['created_at']
-        )
-        
-        if response.data:
-            users = {user.id: user for user in response.includes['users']}
-            
-            for tweet in response.data:
-                parsed_tweet = {}
-                user = users[tweet.author_id]
-                
-                parsed_tweet['text'] = tweet.text
-                parsed_tweet['sentiment'] = get_tweet_sentiment(tweet.text)
-                parsed_tweet['polarity'] = get_sentiment_polarity(tweet.text)
-                parsed_tweet['user'] = user.username
-                parsed_tweet['url'] = f"https://twitter.com/{user.username}/status/{tweet.id}"
-                
-                tweets.append(parsed_tweet)
-        
-        return tweets
-
-    # This is the new, important part!
-    except tweepy.errors.TooManyRequests as e:
-        st.error("Rate Limit Exceeded. The X API Free Tier only allows 1 search every 15 minutes. Please try again later.")
-        return None
+        df = pd.read_csv(file_path)
+        # Pre-calculate sentiment if not already done (optional, but good practice)
+        # Check if columns exist before creating them
+        if 'sentiment' not in df.columns:
+            df['sentiment'] = df['text'].apply(get_tweet_sentiment)
+        if 'polarity' not in df.columns:
+             df['polarity'] = df['text'].apply(get_sentiment_polarity)
+        return df
+    except FileNotFoundError:
+        st.error(f"Error: The file {file_path} was not found. Make sure 'tweets.csv' is in the same folder as app.py.")
+        st.stop() # Stop the app if data can't be loaded
     except Exception as e:
-        st.error(f"Error fetching tweets: {e}")
-        return None
+        st.error(f"Error loading data: {e}")
+        st.stop()
 
 # --- Main app logic ---
 
 def main():
-    st.set_page_config(page_title="Twitter Sentiment Tracker", layout="wide")
-    st.title("🐦 Twitter Sentiment Tracker (v2 API)")
-    st.markdown("A real-time dashboard to analyze public sentiment on any topic.")
+    st.set_page_config(page_title="Twitter Sentiment Demo", layout="wide")
+    st.title("🐦 Twitter Sentiment Tracker (Demo Version)")
+    st.markdown("A dashboard analyzing sentiment from a **saved dataset** of tweets.")
+    st.warning("Note: This demo uses pre-collected data and does not fetch live tweets due to API limitations.")
 
-    client = get_tweepy_client()
+    # Load the data from the CSV file
+    df_all_tweets = load_data()
+
+    if df_all_tweets is None or df_all_tweets.empty:
+        st.error("Failed to load tweet data. Cannot proceed.")
+        return # Exit if data loading failed
 
     st.sidebar.header("Search Parameters")
-    query = st.sidebar.text_input("Enter a topic or hashtag (e.g., #Python)", "#Python")
-    count = st.sidebar.slider("Number of Tweets to Analyze (10-100)", 10, 100, 50)
     
+    # Get unique topics from the 'topic' column for the dropdown
+    available_topics = df_all_tweets['topic'].unique().tolist()
+    
+    # Use a selectbox instead of text input
+    query_topic = st.sidebar.selectbox("Select a topic to analyze:", available_topics)
+    
+    # We don't need a count slider anymore, we'll show all tweets for the topic
+
     if st.sidebar.button("Analyze Sentiment"):
-        if query:
-            full_query = f"{query} lang:en -is:retweet"
+        if query_topic:
+            # --- Filter the DataFrame instead of fetching ---
+            df_filtered = df_all_tweets[df_all_tweets['topic'] == query_topic].copy() # Use .copy() to avoid SettingWithCopyWarning
             
-            with st.spinner(f"Fetching and analyzing {count} tweets for '{query}'..."):
-                tweets = fetch_tweets(client, full_query, count)
+            if not df_filtered.empty:
+                st.subheader(f"Sentiment Analysis for '{query_topic}'")
                 
-                # This logic is now safe because fetch_tweets will return None on error
-                if tweets:
-                    df = pd.DataFrame(tweets)
-                    
-                    st.subheader(f"Overall Sentiment Analysis")
-                    sentiment_counts = df['sentiment'].value_counts()
-                    sentiment_df = pd.DataFrame({'Sentiment': sentiment_counts.index, 'Tweets': sentiment_counts.values})
-                    
-                    col1, col2 = st.columns([1, 2])
-
-                    with col1:
-                        st.metric(label="Total Tweets Analyzed", value=len(df))
-                        st.dataframe(sentiment_counts)
-                    
-                    with col2:
-                        if not sentiment_df.empty:
-                            st.bar_chart(sentiment_df.set_index('Sentiment'))
-                        else:
-                            st.warning("No sentiments to plot.")
-
-                    st.subheader("Raw Tweet Data")
-                    st.dataframe(df[['user', 'text', 'sentiment', 'polarity', 'url']], use_container_width=True)
+                sentiment_counts = df_filtered['sentiment'].value_counts()
+                sentiment_df = pd.DataFrame({'Sentiment': sentiment_counts.index, 'Tweets': sentiment_counts.values})
                 
-                elif tweets is None:
-                    # This means the rate limit error was handled
-                    pass
+                col1, col2 = st.columns([1, 2])
+
+                with col1:
+                    st.metric(label="Total Tweets Analyzed", value=len(df_filtered))
+                    st.dataframe(sentiment_counts)
+                
+                with col2:
+                    if not sentiment_df.empty:
+                        st.bar_chart(sentiment_df.set_index('Sentiment'))
+                    else:
+                        st.warning("No sentiments to plot.")
+
+                st.subheader("Tweet Data")
+                # Ensure columns exist before displaying
+                display_cols = ['user', 'text', 'sentiment', 'polarity', 'url']
+                existing_cols = [col for col in display_cols if col in df_filtered.columns]
+                st.dataframe(df_filtered[existing_cols], use_container_width=True)
+
+                st.subheader("Sample Positive Tweets")
+                positive_tweets_series = df_filtered[df_filtered['sentiment'] == 'Positive']['text']
+                if not positive_tweets_series.empty:
+                    # Show up to 5 samples
+                    num_samples = min(5, len(positive_tweets_series))
+                    for t in positive_tweets_series.sample(num_samples).tolist():
+                        st.markdown(f"> {t}")
                 else:
-                    st.warning("No tweets found for that query. Try another term.")
+                    st.info(f"No positive tweets found for {query_topic}.")
+
+                st.subheader("Sample Negative Tweets")
+                negative_tweets_series = df_filtered[df_filtered['sentiment'] == 'Negative']['text']
+                if not negative_tweets_series.empty:
+                    num_samples = min(5, len(negative_tweets_series))
+                    for t in negative_tweets_series.sample(num_samples).tolist():
+                        st.markdown(f"> {t}")
+                else:
+                    st.info(f"No negative tweets found for {query_topic}.")
+            
+            else:
+                st.warning(f"No tweets found in the dataset for the topic '{query_topic}'.")
         else:
-            st.sidebar.warning("Please enter a search term.")
+            st.sidebar.warning("Please select a topic.")
 
 if __name__ == "__main__":
     main()

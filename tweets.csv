@@ -1,0 +1,11 @@
+topic,text,sentiment,polarity,user,url
+#Python,"Python is amazing for data science! #coding #DataScience",Positive,0.6,"DataGuru123","https://twitter.com/DataGuru123/status/12345"
+#Python,"Just learned about list comprehensions in Python, so elegant.",Positive,0.5,"CodeNewbie","https://twitter.com/CodeNewbie/status/12346"
+#Python,"Debugging this Python script is taking forever... #programming",Negative,-0.5,"FrustratedDev","https://twitter.com/FrustratedDev/status/12347"
+#Python,"What are the best libraries for web scraping in Python?",Neutral,0.0,"CuriousCoder","https://twitter.com/CuriousCoder/status/12348"
+#Python,"The Python community is so helpful and welcoming!",Positive,0.7,"HappyLearner","https://twitter.com/HappyLearner/status/12349"
+#DataScience,"Building a machine learning model with scikit-learn. #AI #ML",Neutral,0.0,"ML_Maven","https://twitter.com/ML_Maven/status/12350"
+#DataScience,"Data visualization is key to understanding trends. Using Matplotlib.",Positive,0.4,"VizWizard","https://twitter.com/VizWizard/status/12351"
+#DataScience,"Overfitting is a serious issue in my model. Need to regularize.",Negative,-0.6,"ModelStruggler","https://twitter.com/ModelStruggler/status/12352"
+#Streamlit,"Streamlit makes building web apps for data so fast! #Python",Positive,0.8,"StreamlitFan","https://twitter.com/StreamlitFan/status/12353"
+#Streamlit,"Trying to deploy my Streamlit app, running into some issues.",Negative,-0.3,"DeployDebacle","https://twitter.com/DeployDebacle/status/12354"
