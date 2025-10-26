@@ -50,9 +50,9 @@ def load_data(file_path="tweets.csv"):
 
 def main():
     st.set_page_config(page_title="Twitter Sentiment Demo", layout="wide")
-    st.title("🐦 Twitter Sentiment Tracker (Demo Version)")
-    st.markdown("A dashboard analyzing sentiment from a **saved dataset** of tweets.")
-    st.warning("Note: This demo uses pre-collected data and does not fetch live tweets due to API limitations.")
+    st.title(" Twitter Sentiment Tracker ")
+    
+   
 
     # Load the data from the CSV file
     df_all_tweets = load_data()
