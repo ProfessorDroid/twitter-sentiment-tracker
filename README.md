@@ -4,6 +4,9 @@ A web application built with Python and Streamlit to analyze the real-time publi
 
 This project fetches live tweets, performs Natural Language Processing (NLP) to determine sentiment, and displays the results in an interactive dashboard.
 
+#working project link 
+https://twitter-sentiment-tracker-rvvds6u7slnt2fipy6vdxa.streamlit.app/
+
 
 
 ## Features
